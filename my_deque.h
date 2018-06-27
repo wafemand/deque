@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <iterator>
+#include <algorithm>
 #include <vector>
 #include <memory>
 
@@ -32,7 +33,13 @@ class my_deque {
                   base_deque(base_deque) {}
 
     public:
-        RA_iterator(RA_iterator const &other) = default;
+        template<typename U, typename _Other_deque>
+        RA_iterator(RA_iterator<U, _Other_deque> const &other,
+                    typename std::enable_if<std::is_same<U const, _Tp>::value &&
+                                            std::is_const<_Tp>::value>::type * = nullptr) {
+            pos = other.pos;
+            base_deque = other.base_deque;
+        };
 
         RA_iterator &operator++() {
             pos++;
@@ -64,28 +71,40 @@ class my_deque {
             return &(*base_deque)[pos];
         }
 
-        bool operator==(RA_iterator const &other) {
-            return other.pos == pos && other.base_deque == base_deque;
+        RA_iterator &operator+=(difference_type diff) {
+            pos += diff;
+            return *this;
         }
 
-        bool operator!=(RA_iterator const &other) {
-            return other.pos != pos || other.base_deque != base_deque;
+        RA_iterator &operator-=(difference_type diff) {
+            pos -= diff;
+            return *this;
         }
 
-        RA_iterator operator+(difference_type diff) {
-            return RA_iterator(pos + diff, base_deque);
-        }
+        RA_iterator &operator=(RA_iterator const &other) = default;
 
-        RA_iterator operator-(difference_type diff) {
-            return RA_iterator(pos - diff, base_deque);
-        }
-
-        difference_type operator-(RA_iterator const &other) {
-            return difference_type(pos - other.pos);
-        }
-
-        reference operator[](difference_type diff) {
+        reference operator[](difference_type diff) const {
             return *RA_iterator(*this + diff);
+        }
+
+        friend RA_iterator operator+(RA_iterator it, difference_type diff) {
+            return it += diff;
+        }
+
+        friend RA_iterator operator-(RA_iterator it, difference_type diff) {
+            return it -= diff;
+        }
+
+        friend difference_type operator-(RA_iterator const &a, RA_iterator const &b) {
+            return difference_type(a.pos - b.pos);
+        }
+
+        friend bool operator==(RA_iterator const &a, RA_iterator const &b) {
+            return a.pos == b.pos && a.base_deque == b.base_deque;
+        }
+
+        friend bool operator!=(RA_iterator const &a, RA_iterator const &b) {
+            return a.pos != b.pos || a.base_deque != b.base_deque;
         }
 
     private:
@@ -109,6 +128,8 @@ public:
     my_deque() noexcept;
     explicit my_deque(size_t size);
     my_deque(size_t size, T const &value);
+    my_deque(my_deque const &other);
+    my_deque &operator=(my_deque const &other);
     ~my_deque();
 
     void resize(size_t new_size, T const &value);
@@ -145,6 +166,9 @@ public:
     const_reverse_iterator rbegin() const;
     const_reverse_iterator rend() const;
 
+    template<typename T1>
+    friend void swap(my_deque<T1> &a, my_deque<T1> &b);
+
 private:
 
     void del_range_(iterator _begin, iterator _end) {
@@ -154,8 +178,8 @@ private:
     }
 
     void fix_capacity() {
-        if (size_ == capacity_) {
-            reserve(2 * capacity_);
+        if (size_ >= capacity_) {
+            reserve(std::max(size_t(1), 2 * capacity_));
         } else if (size_ <= capacity_ / 4) {
             reserve(capacity_ / 2);
         }
@@ -184,6 +208,22 @@ my_deque<T>::my_deque(size_t size, const T &value) : my_deque() {
 }
 
 template<typename T>
+my_deque<T>::my_deque(my_deque const &other) : my_deque() {
+    reserve(other.capacity_);
+    std::uninitialized_copy(other.begin(), other.end(), data_.get());
+    start_ = 0;
+    size_ = other.size_;
+    capacity_ = other.capacity_;
+}
+
+template<typename T>
+my_deque<T> &my_deque<T>::operator=(my_deque const &other) {
+    my_deque tmp(other);
+    swap(tmp, *this);
+    return *this;
+}
+
+template<typename T>
 my_deque<T>::~my_deque() {
     clear();
 }
@@ -204,8 +244,11 @@ void my_deque<T>::resize(size_t new_size, const T &value) {
 template<typename T>
 void my_deque<T>::reserve(size_t new_capacity) {
     auto new_data = static_cast<T *>(malloc(new_capacity * sizeof(T)));
-    size_t move_count = std::min(capacity_, new_capacity);
-    std::move(begin(), begin() + move_count, new_data);
+    size_t move_count = std::min(size_, new_capacity);
+    if (data_.get() != nullptr) {
+        std::uninitialized_copy(begin(), begin() + move_count, new_data);
+        del_range_(begin(), end());
+    }
     data_.reset(new_data);
     capacity_ = new_capacity;
     start_ = 0;
@@ -213,27 +256,29 @@ void my_deque<T>::reserve(size_t new_capacity) {
 
 template<typename T>
 void my_deque<T>::push_back(const T &value) {
-    new (&operator[](size_)) T(value);
-    size_++;
     fix_capacity();
+    new(&operator[](size_)) T(value);
+    size_++;
 }
 
 template<typename T>
 void my_deque<T>::push_front(const T &value) {
-    start_--;
-    new (&operator[](0)) T(value);
-    size_++;
     fix_capacity();
+    start_--;
+    new(&operator[](0)) T(value);
+    size_++;
 }
 
 template<typename T>
 void my_deque<T>::pop_back() {
+    fix_capacity();
     del_range_(end() - 1, end());
     size_--;
 }
 
 template<typename T>
 void my_deque<T>::pop_front() {
+    fix_capacity();
     del_range_(begin(), begin() + 1);
     size_--;
     start_++;
@@ -246,7 +291,7 @@ T &my_deque<T>::back() noexcept {
 
 template<typename T>
 T const &my_deque<T>::back() const noexcept {
-    return operator[](size_);
+    return operator[](size_ - 1);
 }
 
 template<typename T>
@@ -286,7 +331,7 @@ typename my_deque<T>::iterator my_deque<T>::insert(my_deque::const_iterator pos,
     push_back(val);
     iterator res = iterator(pos.pos, this);
     for (iterator it = res; it != end(); ++it) {
-        std::swap(*it, *end()[-1]);
+        std::swap(*it, end()[-1]);
     }
     return res;
 }
@@ -308,7 +353,7 @@ typename my_deque<T>::iterator my_deque<T>::erase(my_deque::const_iterator first
     while (range_size-- > 0) {
         pop_back();
     }
-    return finish;
+    return start;
 }
 
 template<typename T>
@@ -349,6 +394,14 @@ typename my_deque<T>::const_reverse_iterator my_deque<T>::rbegin() const {
 template<typename T>
 typename my_deque<T>::const_reverse_iterator my_deque<T>::rend() const {
     return my_deque::const_reverse_iterator(begin());
+}
+
+template<typename T>
+void swap(my_deque<T> &a, my_deque<T> &b) {
+    std::swap(a.capacity_, b.capacity_);
+    std::swap(a.size_, b.size_);
+    std::swap(a.start_, b.start_);
+    std::swap(a.data_, b.data_);
 }
 
 

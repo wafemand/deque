@@ -8,6 +8,7 @@
 
 using container = my_deque<counted>;
 
+
 template<typename It>
 void dump(It first, It last) {
     std::cout << "dump: \n";
@@ -141,7 +142,7 @@ TEST(correctness, copy_ctor) {
     container c;
     mass_push_back(c, {1, 2, 3, 4});
     container c2(c);
-//    expect_eq(c2, {1, 2, 3, 4});
+    expect_eq(c2, {1, 2, 3, 4});
 }
 
 TEST(correctness, copy_ctor_empty) {
