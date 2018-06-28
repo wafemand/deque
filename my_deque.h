@@ -11,6 +11,10 @@
 #include <algorithm>
 #include <vector>
 #include <memory>
+#include "deque"
+
+
+// TODO: save iterator validity after swap
 
 
 template<typename T>
@@ -112,13 +116,6 @@ class my_deque {
         _Deque_pointer base_deque;
     };
 
-
-    struct MallocDeleter {
-        void operator()(T *ptr) {
-            free(ptr);
-        }
-    };
-
 public:
     using iterator = RA_iterator<T, my_deque<T> *>;
     using const_iterator = RA_iterator<T const, my_deque<T> const *>;
@@ -146,10 +143,11 @@ public:
     T &front() noexcept;
     T const &front() const noexcept;
 
-    T &operator[](size_t index) noexcept;
-    T const &operator[](size_t index) const noexcept;
+    T &operator[](ptrdiff_t index) noexcept;
+    T const &operator[](ptrdiff_t index) const noexcept;
 
     bool empty() noexcept;
+    size_t size() noexcept;
     void clear() noexcept;
 
     iterator insert(const_iterator pos, T const &val);
@@ -170,6 +168,13 @@ public:
     friend void swap(my_deque<T1> &a, my_deque<T1> &b);
 
 private:
+    struct Deleter {
+        void operator()(T *ptr) {
+            operator delete(ptr);
+        }
+    };
+
+    using data_pointer = std::unique_ptr<T, Deleter>;
 
     void del_range_(iterator _begin, iterator _end) {
         for (auto it = _begin; it != _end; ++it) {
@@ -185,7 +190,25 @@ private:
         }
     }
 
-    std::unique_ptr<T, MallocDeleter> data_;
+    size_t cycle_add(size_t val, ptrdiff_t delta) const {
+        ptrdiff_t signed_val = val;
+        signed_val += delta;
+        signed_val %= capacity_;
+        if (signed_val < 0) {
+            signed_val += capacity_;
+        }
+        return static_cast<size_t>(signed_val);
+    }
+
+    void cycle_inc(size_t &val) const {
+        val = cycle_add(val, 1);
+    }
+
+    void cycle_dec(size_t &val) const {
+        val = cycle_add(val, -1);
+    }
+
+    data_pointer data_;
     size_t size_;
     size_t capacity_;
     size_t start_;
@@ -243,13 +266,13 @@ void my_deque<T>::resize(size_t new_size, const T &value) {
 
 template<typename T>
 void my_deque<T>::reserve(size_t new_capacity) {
-    auto new_data = static_cast<T *>(malloc(new_capacity * sizeof(T)));
+    data_pointer new_data(static_cast<T *>(operator new(new_capacity * sizeof(T))));
     size_t move_count = std::min(size_, new_capacity);
     if (data_.get() != nullptr) {
-        std::uninitialized_copy(begin(), begin() + move_count, new_data);
+        std::uninitialized_copy(begin(), begin() + move_count, new_data.get());
         del_range_(begin(), end());
     }
-    data_.reset(new_data);
+    data_.swap(new_data);
     capacity_ = new_capacity;
     start_ = 0;
 }
@@ -264,24 +287,24 @@ void my_deque<T>::push_back(const T &value) {
 template<typename T>
 void my_deque<T>::push_front(const T &value) {
     fix_capacity();
-    start_--;
-    new(&operator[](0)) T(value);
+    new(&operator[](-1)) T(value);
+    cycle_dec(start_);
     size_++;
 }
 
 template<typename T>
 void my_deque<T>::pop_back() {
-    fix_capacity();
     del_range_(end() - 1, end());
     size_--;
+    fix_capacity();
 }
 
 template<typename T>
 void my_deque<T>::pop_front() {
-    fix_capacity();
     del_range_(begin(), begin() + 1);
     size_--;
-    start_++;
+    cycle_inc(start_);
+    fix_capacity();
 }
 
 template<typename T>
@@ -305,18 +328,23 @@ T const &my_deque<T>::front() const noexcept {
 }
 
 template<typename T>
-T &my_deque<T>::operator[](size_t index) noexcept {
-    return data_.get()[(start_ + index) % capacity_];
+T &my_deque<T>::operator[](ptrdiff_t index) noexcept {
+    return data_.get()[cycle_add(start_, index)];
 }
 
 template<typename T>
-T const &my_deque<T>::operator[](size_t index) const noexcept {
-    return data_.get()[(start_ + index) % capacity_];
+T const &my_deque<T>::operator[](ptrdiff_t index) const noexcept {
+    return data_.get()[cycle_add(start_, index)];
 }
 
 template<typename T>
 bool my_deque<T>::empty() noexcept {
     return size_ == 0;
+}
+
+template<typename T>
+size_t my_deque<T>::size() noexcept {
+    return size_;
 }
 
 template<typename T>
