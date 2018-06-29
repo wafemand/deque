@@ -382,12 +382,21 @@ void my_deque<T>::clear() noexcept {
 
 template<typename T>
 typename my_deque<T>::iterator my_deque<T>::insert(my_deque::const_iterator pos, const T &val) {
-    push_back(val);
-    iterator res = begin_ + pos.get_index();
-    for (iterator it = res; it != end(); ++it) {
-        std::swap(*it, end()[-1]);
+    if (pos.get_index() > size() - pos.get_index()) {
+        push_back(val);
+        iterator it = begin_ + pos.get_index();
+        for (; it != end(); ++it) {
+            std::swap(*it, end()[-1]);
+        }
     }
-    return res;
+    else {
+        push_front(val);
+        reverse_iterator rit = reverse_iterator(begin_ + pos.get_index() + 1);
+        for (; rit != rend(); ++rit) {
+            std::swap(*rit, rend()[-1]);
+        }
+    }
+    return begin_ + pos.get_index();
 }
 
 template<typename T>
