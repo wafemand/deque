@@ -46,6 +46,14 @@ class my_deque {
             return static_cast<size_t>(signed_val);
         }
 
+        void inc_start() {
+            start_ = cycle_add(start_, 1);
+        }
+
+        void dec_start() {
+            start_ = cycle_add(start_, -1);
+        }
+
     public:
         template<typename U>
         RA_iterator(RA_iterator<U> const &other,
@@ -306,7 +314,7 @@ template<typename T>
 void my_deque<T>::push_front(const T &value) {
     fix_capacity();
     new(&operator[](-1)) T(value);
-    --begin_;
+    begin_.dec_start();
     size_++;
 }
 
@@ -321,7 +329,7 @@ template<typename T>
 void my_deque<T>::pop_front() {
     del_range_(begin(), begin() + 1);
     size_--;
-    ++begin_;
+    begin_.inc_start();
     //fix_capacity();
 }
 
@@ -393,11 +401,22 @@ typename my_deque<T>::iterator my_deque<T>::erase(my_deque::const_iterator first
     ptrdiff_t range_size = last - first;
     iterator start = begin_ + first.get_index();
     iterator finish = begin_ + last.get_index();
-    for (iterator it = start; it + range_size != end(); it++) {
-        std::swap(*it, it[range_size]);
+    if (end() - finish < start - begin()) {
+        for (iterator it = start; it + range_size != end(); it++) {
+            std::swap(*it, it[range_size]);
+        }
+        while (range_size-- > 0) {
+            pop_back();
+        }
     }
-    while (range_size-- > 0) {
-        pop_back();
+    else{
+        reverse_iterator rstart = reverse_iterator(finish);
+        for (reverse_iterator rit = rstart; rit + range_size != rend(); rit++) {
+            std::swap(*rit, rit[range_size]);
+        }
+        while (range_size-- > 0) {
+            pop_front();
+        }
     }
     return start;
 }
